@@ -255,28 +255,27 @@ with tab2:
     else:
         latest_total_gold = 0
 
-   # 🎯 【終極修正 3】獎勵看板安全呈現版
+# 🎯 【完美對齊版】獎勵看板（欄位完全對應你的 Google Sheet）
     if df_reward is not None and not df_reward.empty:
         st.subheader("🎁 獎勵兌換進度")
         
-        # 複製一份資料避免改動原始數據
+        # 複製一份資料並清除前後空白
         df_reward_plot = df_reward.copy()
-        
-        # 強制清除欄位名稱前後空白
         df_reward_plot.columns = df_reward_plot.columns.str.strip()
         
-        if "兌換所需金幣" in df_reward_plot.columns and "獎勵" in df_reward_plot.columns:
+        # 🎯 這裡已經精準改成你圖上的欄位名稱：『獎勵』與『所需金幣』
+        if "所需金幣" in df_reward_plot.columns and "獎勵" in df_reward_plot.columns:
             # 確保數字轉換完全正確
-            df_reward_plot["兌換所需金幣"] = pd.to_numeric(df_reward_plot["兌換所需金幣"], errors="coerce").fillna(0)
+            df_reward_plot["所需金幣"] = pd.to_numeric(df_reward_plot["所需金幣"], errors="coerce").fillna(0)
             
-            # 帶入剛才算出的最新總金幣資產
+            # 帶入剛才由 Python 自己算出的最新累積總金幣
             df_reward_plot["目前累積"] = latest_total_gold
-            df_reward_plot["還差多少"] = df_reward_plot["兌換所需金幣"] - df_reward_plot["目前累積"]
             
-            # 確保「還差多少」不會出現負數
+            # 計算還差多少（所需金幣 - 目前累積）
+            df_reward_plot["還差多少"] = df_reward_plot["所需金幣"] - df_reward_plot["目前累積"]
             df_reward_plot.loc[df_reward_plot["還差多少"] < 0, "還差多少"] = 0
             
-            # 為了避免畫面上文字爆掉，我們把文字改寫在滑鼠懸停提示（Hover）裡，並讓長條圖乾淨輸出
+            # 建立乾淨漂亮的橫向長條圖
             fig_reward = px.bar(
                 df_reward_plot,
                 x="還差多少",
@@ -284,20 +283,27 @@ with tab2:
                 orientation="h",
                 color="還差多少",
                 color_continuous_scale="Reds_r",
-                hover_data=["兌換所需金幣", "目前累積"],
+                hover_data=["所需金幣", "目前累積"],
                 labels={"還差多少": "還差多少金幣"},
             )
             
-            # 讓圖表字體與間隔變好看，文字改成靠內顯示（避免 outside 導致圖表隱藏）
+            # 讓剩餘金幣數字優雅地顯示在長條圖內部
             fig_reward.update_traces(
                 texttemplate='%{x} 🪙', 
                 textposition='inside',
                 insidetextanchor='end'
             )
             
+            # 調整圖表版面，讓文字跟顏色條更美觀
+            fig_reward.update_layout(
+                showlegend=False,
+                coloraxis_showscale=True
+            )
+            
             st.plotly_chart(fig_reward, use_container_width=True)
         else:
-            st.warning("⚠️ 找不到『兌換所需金幣』或『獎勵』欄位，請檢查『獎勵清單分頁』的標題是否正確。")
+            st.warning("⚠️ 找不到『所需金幣』或『獎勵』欄位。")
+            st.write("🔍 目前實際抓到的欄位有：", list(df_reward_plot.columns))
 
 # ==========================================
 # --- Tab 3: 學習效率 ---
