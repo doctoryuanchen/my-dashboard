@@ -169,86 +169,117 @@ with tab2:
     if df_gold is not None and not df_gold.empty:
         st.subheader("💰 金幣數據綜合看板")
 
-        all_possible_gold = ["主線金幣", "支線金幣", "每日總金幣", "累積金幣"]
+        # 1. 確保數值欄位都是數字
+        all_possible_gold = ["主線金幣", "支線金幣", "每日總金幣"]
         for col in df_gold.columns:
             if col in all_possible_gold:
-                df_gold[col] = pd.to_numeric(df_gold[col], errors="coerce").fillna(
-                    0
+                df_gold[col] = pd.to_numeric(df_gold[col], errors="coerce").fillna(0)
+
+        # 🎯 【核心修正 1】只保留「真正有填寫日期」的資料，過濾掉後面一堆公式預填的空白列
+        df_gold_clean = df_gold[df_gold["日期"].notna() & (df_gold["日期"].astype(str).str.strip() != "")].copy()
+
+        if not df_gold_clean.empty:
+            # 確保主線金幣欄位存在
+            if "主線金幣" not in df_gold_clean.columns:
+                df_gold_clean["主線金幣"] = 0
+
+            # 🎯 【核心修正 2】完全不依賴試算表 J 欄，由 Python 根據 I 欄 (每日總金幣) 自己計算累積
+            df_gold_clean["每日學習總金幣"] = df_gold_clean["主線金幣"]
+            
+            # Python 自己做完美的累加
+            df_gold_clean["真實累積總金幣"] = df_gold_clean["每日總金幣"].cumsum()
+            df_gold_clean["累積學習總金幣"] = df_gold_clean["每日學習總金幣"].cumsum()
+            
+            # 其他累積金幣 = 真實累積總額 - 純學習累積
+            df_gold_clean["其他累積金幣"] = df_gold_clean["真實累積總金幣"] - df_gold_clean["累積學習總金幣"]
+            df_gold_clean.loc[df_gold_clean["其他累積金幣"] < 0, "其他累積金幣"] = 0
+            
+            # 轉成字串用於圖表 X 軸
+            df_gold_clean["顯示日期"] = df_gold_clean["_clean_date"].astype(str)
+
+            # 取得「最新那一天」的總金幣（僅此一個數字，絕不重複加總），用來算獎勵
+            latest_total_gold = df_gold_clean["真實累積總金幣"].iloc[-1]
+            
+            st.metric(label="目前您擁有的總金幣資產", value=f"🪙 {int(latest_total_gold)} 個")
+
+            g_col1, g_col2 = st.columns(2)
+
+            with g_col1:
+                st.write("📊 每日金幣進帳對比 (日常總額 vs 純主線學習)")
+                df_daily_melt = pd.melt(
+                    df_gold_clean,
+                    id_vars=["顯示日期"],
+                    value_vars=["每日總金幣", "每日學習總金幣"],
+                    var_name="金幣類型",
+                    value_name="金幣數量",
                 )
+                fig_daily_gold = px.bar(
+                    df_daily_melt,
+                    x="顯示日期",
+                    y="金幣數量",
+                    color="金幣類型",
+                    barmode="group",
+                    labels={"顯示日期": "日期", "金幣數量": "金幣數量"},
+                    color_discrete_map={
+                        "每日總金幣": "#2196F3",
+                        "每日學習總金幣": "#4CAF50",
+                    },
+                )
+                fig_daily_gold.update_xaxes(type="category")
+                st.plotly_chart(fig_daily_gold, use_container_width=True)
 
-        if "主線金幣" not in df_gold.columns:
-            df_gold["主線金幣"] = 0
+            with g_col2:
+                st.write("📈 長期金幣累積總量 (💡 基礎學習累積在下方作為地基)")
+                df_cum_melt = pd.melt(
+                    df_gold_clean,
+                    id_vars=["顯示日期"],
+                    value_vars=["累積學習總金幣", "其他累積金幣"],
+                    var_name="資產類型",
+                    value_name="累積總額",
+                )
+                fig_cum_gold = px.area(
+                    df_cum_melt,
+                    x="顯示日期",
+                    y="累積總額",
+                    color="資產類型",
+                    labels={"顯示日期": "日期", "累積總額": "金幣總量"},
+                    color_discrete_map={
+                        "累積學習總金幣": "#FF9800",
+                        "其他累積金幣": "#FFE082",
+                    },
+                )
+                fig_cum_gold.update_xaxes(type="category")
+                st.plotly_chart(fig_cum_gold, use_container_width=True)
+        else:
+            latest_total_gold = 0
+    else:
+        latest_total_gold = 0
 
-        df_gold["每日學習總金幣"] = df_gold["主線金幣"]
-        df_gold["累積學習總金幣"] = df_gold["每日學習總金幣"].cumsum()
-        df_gold["其他累積金幣"] = df_gold["累積金幣"] - df_gold["累積學習總金幣"]
-        
-        # 💡【修正錯字】精準防呆，不再亂創變數
-        df_gold.loc[df_gold["其他累積金幣"] < 0, "其他累積金幣"] = 0
-
-        df_gold["顯示日期"] = df_gold["_clean_date"].astype(str)
-
-        g_col1, g_col2 = st.columns(2)
-
-        with g_col1:
-            st.write("📊 每日金幣進帳對比 (日常總額 vs 純主線學習)")
-            df_daily_melt = pd.melt(
-                df_gold,
-                id_vars=["顯示日期"],
-                value_vars=["每日總金幣", "每日學習總金幣"],
-                var_name="金幣類型",
-                value_name="金幣數量",
-            )
-            fig_daily_gold = px.bar(
-                df_daily_melt,
-                x="顯示日期",
-                y="金幣數量",
-                color="金幣類型",
-                barmode="group",
-                labels={"顯示日期": "日期", "金幣數量": "金幣數量"},
-                color_discrete_map={
-                    "每日總金幣": "#2196F3",
-                    "每日學習總金幣": "#4CAF50",
-                },
-            )
-            fig_daily_gold.update_xaxes(type="category")
-            st.plotly_chart(fig_daily_gold, use_container_width=True)
-
-        with g_col2:
-            st.write("📈 長期金幣累積總量 (💡 基礎學習累積在下方作為地基)")
-            df_cum_melt = pd.melt(
-                df_gold,
-                id_vars=["顯示日期"],
-                value_vars=["累積學習總金幣", "其他累積金幣"],
-                var_name="資產類型",
-                value_name="累積總額",
-            )
-            fig_cum_gold = px.area(
-                df_cum_melt,
-                x="顯示日期",
-                y="累積總額",
-                color="資產類型",
-                labels={"顯示日期": "日期", "累積總額": "金幣總量"},
-                color_discrete_map={
-                    "累積學習總金幣": "#FF9800",
-                    "其他累積金幣": "#FFE082",
-                },
-            )
-            fig_cum_gold.update_xaxes(type="category")
-            st.plotly_chart(fig_cum_gold, use_container_width=True)
-
+    # 🎯 【核心修正 3】獎勵看板只拿最新一天的總金幣減去所需金幣，且排除 NaN
     if df_reward is not None and not df_reward.empty:
         st.subheader("🎁 獎勵兌換進度")
-        if "還差多少" in df_reward.columns and "獎勵" in df_reward.columns:
+        
+        if "兌換所需金幣" in df_reward.columns and "獎勵" in df_reward.columns:
+            df_reward["兌換所需金幣"] = pd.to_numeric(df_reward["兌換所需金幣"], errors="coerce").fillna(0)
+            
+            # 直接賦予每項獎勵當前的總資產
+            df_reward["目前累積"] = latest_total_gold
+            df_reward["還差多少"] = df_reward["兌換所需金幣"] - df_reward["目前累積"]
+            df_reward.loc[df_reward["還差多少"] < 0, "還差多少"] = 0
+            
+            # 建立圖表
             fig_reward = px.bar(
                 df_reward,
                 x="還差多少",
                 y="獎勵",
                 orientation="h",
-                text="目前累積",
+                text="還差多少", # 顯示還差多少金幣
                 color="還差多少",
                 color_continuous_scale="Reds_r",
+                labels={"還差多少": "還差多少金幣"},
             )
+            # 在條形圖上清楚標示剩餘金幣
+            fig_reward.update_traces(texttemplate='%{text} 🪙', textposition='outside')
             st.plotly_chart(fig_reward, use_container_width=True)
 
 # ==========================================
